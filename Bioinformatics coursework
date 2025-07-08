@@ -1,0 +1,210 @@
+#! /bin/bash
+# reads the users input, allows to type any name, does not allow to leave an empty space and allows for the user to exit.
+
+while true; do
+echo -n "Enter Taxon Name, followed by enter (type 'q' to exit): ";read TaxonName;
+if [ -z  "$TaxonName" ]; then
+         echo "Taxon name cannot be empty"
+elif [ "$TaxonName" == "q" ]; then
+    echo "Exiting. See you later!"
+    exit
+else 
+        echo The Taxon name entered: $TaxonName
+
+# if the correct name is provided – a string, then esearch is performed in the protein database. Only full and verified sequences are provided and stored in the WebEnv string. 
+         wget "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=protein&term=(${TaxonName}[Organism:exp]) NOT (unverified OR partial)&usehistory=y&retmode=json" -O protein_$TaxonName.txt
+	 break 
+fi
+done
+
+
+# a variable created, it contains the number of lines containing the WebEnv string. If this text file is incorrect, due to wrong input, then this file will not have the WebEnv string, and it will have 0 lines. Thus, the script should be terminated. If the WebEnv is present, then at least 1 line will be present. 
+ 
+one=1
+
+# identifies the string with ‘webenv’ and counts the no. of lines
+WebEnv_line=`grep '"webenv"' protein_$TaxonName.txt | grep 'MegaStore"' | wc -l`
+echo  "Tests if webenv is good..." 
+
+#the while loop with if/else statement. If there is at least 1 line, then the loop will be broken. If the condition is not met and there are no lines = 0, then informs the user that the file is incorrect and terminates the script. 
+
+
+while true; do
+if [[ "$WebEnv_line" -eq "$one" ]]; then
+         echo 'File contains webenv';
+         break;  
+else
+        echo "Error: file does not contain webenv";
+	echo "Script has been terminated"; 
+        exit;
+fi
+done
+
+
+WEBENV_LINE=`grep webenv protein_$TaxonName.txt` # prints the webenv line 
+
+# manipulates the string, cut “ and other symbols. 
+WEBID=`echo $WEBENV_LINE | cut -d '"' -f 4`
+
+# WenEnv inserted into the string, EFetch downloads the protein sequences, identified by esearch.  
+wget "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?WebEnv=${WEBID}&query_key=1&db=protein&rettype=fasta" -O efetch_$TaxonName.fasta 
+echo "FASTA file has been downloaded, it is called efetch_$TaxonName.fasta" 
+
+echo "Top 10 lines printed from efetch_$TaxonName.fasta " 
+
+head -n 10 efetch_$TaxonName.fasta 
+
+# searches and counts lines that have an ERROR term, this term appears when a wrong file is generated, due to the incorrect input. Thus, if the FASTA file has no ERROR terms, then it is 0, and it is correct, and the while loop is broken. If the file has this term, then at least one line has this term. Thus, the user is warned if the file is wrong and terminates the script.  
+fasta_line=`grep '<ERROR>' efetch_$TaxonName.fasta | wc -l`
+
+
+
+zero=0
+
+echo "Test a FASTA file"
+while true; do
+if [[ "$fasta_line" -eq "$zero" ]]; then
+         echo "FASTA file is correct";
+         break ; 
+else
+        echo "Warning FASTA file is incorrect";
+	echo "Script has been terminated";
+        exit;
+fi
+done
+
+
+
+# counts how many lines in the FASTA file have ‘>’ that is present on the one-line description. Thus, it allows counting how many sequences were downloaded. The user is warned if the maximum limit is reached that is 10,000 sequences or that all protein sequences of that taxonomy group are downloaded.   
+count=0
+NUMBER_OF_SEQ_IN_FASTA=`awk '/>/ {count++} END {print count}' efetch_$TaxonName.fasta`
+if (( NUMBER_OF_SEQ_IN_FASTA < 10000 ));  then 
+	echo "All protein sequences have been downloaded."
+else 
+	echo "Error: only first 10000 sequences have been downloaded."
+fi
+
+
+
+# EMBOSS pepstats output with the summary statistics is generated. 
+pepstats efetch_$TaxonName.fasta pepstats_output_$TaxonName.pepstats -auto -sprotein1 -stdout -warning -error
+echo "EMBOSS pepstats file is downloaded, it is called pepstats_output_$TaxonName.pepstats"
+
+#generates proteins’ statistics
+sum=0
+count=0
+
+# selects lines that have a single letter = amino acid pattern and adds a total number of each amino acid per sequences. In the end, the sum of each amino acids across all proteins is obtained. Sum of each amino acid starts from 0 that later increases. The counts are stored in different variables for each amino acid.   
+As=`awk '/A = Ala/ {sum+=$4} END {print sum}' pepstats_output_$TaxonName.pepstats`
+Bs=`awk '/B = Asx/ {sum+=$4} END {print sum}' pepstats_output_$TaxonName.pepstats` 
+Cs=`awk '/C = Cys/ {sum+=$4} END {print sum}' pepstats_output_$TaxonName.pepstats` 
+Ds=`awk '/D = Asp/ {sum+=$4} END {print sum}' pepstats_output_$TaxonName.pepstats` 
+Es=`awk '/E = Glu/ {sum+=$4} END {print sum}' pepstats_output_$TaxonName.pepstats` 
+Fs=`awk '/F = Phe/ {sum+=$4} END {print sum}' pepstats_output_$TaxonName.pepstats` 
+Gs=`awk '/G = Gly/ {sum+=$4} END {print sum}' pepstats_output_$TaxonName.pepstats` 
+Hs=`awk '/H = His/ {sum+=$4} END {print sum}' pepstats_output_$TaxonName.pepstats` 
+Is=`awk '/I = Ile/ {sum+=$4} END {print sum}' pepstats_output_$TaxonName.pepstats` 
+Js=`awk '/J = ---/ {sum+=$4} END {print sum}' pepstats_output_$TaxonName.pepstats`
+Ks=`awk '/K = Lys/ {sum+=$4} END {print sum}' pepstats_output_$TaxonName.pepstats` 
+Ls=`awk '/L = Leu/ {sum+=$4} END {print sum}' pepstats_output_$TaxonName.pepstats` 
+Ms=`awk '/M = Met/ {sum+=$4} END {print sum}' pepstats_output_$TaxonName.pepstats` 
+Ns=`awk '/N = Asn/ {sum+=$4} END {print sum}' pepstats_output_$TaxonName.pepstats` 
+Os=`awk '/O = ---/ {sum+=$4} END {print sum}' pepstats_output_$TaxonName.pepstats` 
+Ps=`awk '/P = Pro/ {sum+=$4} END {print sum}' pepstats_output_$TaxonName.pepstats` 
+Qs=`awk '/Q = Gln/ {sum+=$4} END {print sum}' pepstats_output_$TaxonName.pepstats` 
+Rs=`awk '/R = Arg/ {sum+=$4} END {print sum}' pepstats_output_$TaxonName.pepstats` 
+Ss=`awk '/S = Ser/ {sum+=$4} END {print sum}' pepstats_output_$TaxonName.pepstats` 
+Ts=`awk '/T = Thr/ {sum+=$4} END {print sum}' pepstats_output_$TaxonName.pepstats` 
+Us=`awk '/U = ---/ {sum+=$4} END {print sum}' pepstats_output_$TaxonName.pepstats` 
+Vs=`awk '/V = Val/ {sum+=$4} END {print sum}' pepstats_output_$TaxonName.pepstats`
+Ws=`awk '/W = Trp/ {sum+=$4} END {print sum}' pepstats_output_$TaxonName.pepstats` 
+Xs=`awk '/X = Xaa/ {sum+=$4} END {print sum}' pepstats_output_$TaxonName.pepstats` 
+Ys=`awk '/Y = Tyr/ {sum+=$4} END {print sum}' pepstats_output_$TaxonName.pepstats` 
+Zs=`awk '/Z = Glx/ {sum+=$4} END {print sum}' pepstats_output_$TaxonName.pepstats`
+ 
+# all variables with the total no. of each amino acid are stored in a single text file that contains a column of amino acid counts.  
+echo -e "$As\n$Bs\n$Cs\n$Ds\n$Es\n$Fs\n$Gs\n$Hs\n$Is\n$Js\n$Ks\n$Ls\n$Ms\n$Ns\n$Os\n$Ps\n$Qs\n$Rs\n$Ss\n$Ts\n$Us\n$Vs\n$Ws\n$Xs\n$Ys\n$Zs\n" >> file_count.txt
+
+
+
+# the same as above, only this time it is for percentages (molar %) for each amino acid.  
+Asp=`awk '/A = Ala/ {sum+=$5} END {print sum}' pepstats_output_$TaxonName.pepstats`
+Bsp=`awk '/B = Asx/ {sum+=$5} END {print sum}' pepstats_output_$TaxonName.pepstats`
+Csp=`awk '/C = Cys/ {sum+=$5} END {print sum}' pepstats_output_$TaxonName.pepstats`
+Dsp=`awk '/D = Asp/ {sum+=$5} END {print sum}' pepstats_output_$TaxonName.pepstats`
+Esp=`awk '/E = Glu/ {sum+=$5} END {print sum}' pepstats_output_$TaxonName.pepstats`
+Fsp=`awk '/F = Phe/ {sum+=$5} END {print sum}' pepstats_output_$TaxonName.pepstats` 
+Gsp=`awk '/G = Gly/ {sum+=$5} END {print sum}' pepstats_output_$TaxonName.pepstats`
+Hsp=`awk '/H = His/ {sum+=$5} END {print sum}' pepstats_output_$TaxonName.pepstats` 
+Isp=`awk '/I = Ile/ {sum+=$5} END {print sum}' pepstats_output_$TaxonName.pepstats` 
+Jsp=`awk '/J = ---/ {sum+=$5} END {print sum}' pepstats_output_$TaxonName.pepstats`
+Ksp=`awk '/K = Lys/ {sum+=$5} END {print sum}' pepstats_output_$TaxonName.pepstats` 
+Lsp=`awk '/L = Leu/ {sum+=$5} END {print sum}' pepstats_output_$TaxonName.pepstats` 
+Msp=`awk '/M = Met/ {sum+=$5} END {print sum}' pepstats_output_$TaxonName.pepstats`
+Nsp=`awk '/N = Asn/ {sum+=$5} END {print sum}' pepstats_output_$TaxonName.pepstats` 
+Osp=`awk '/O = ---/ {sum+=$5} END {print sum}' pepstats_output_$TaxonName.pepstats`
+Psp=`awk '/P = Pro/ {sum+=$5} END {print sum}' pepstats_output_$TaxonName.pepstats`
+Qsp=`awk '/Q = Gln/ {sum+=$5} END {print sum}' pepstats_output_$TaxonName.pepstats` 
+Rsp=`awk '/R = Arg/ {sum+=$5} END {print sum}' pepstats_output_$TaxonName.pepstats`
+Ssp=`awk '/S = Ser/ {sum+=$5} END {print sum}' pepstats_output_$TaxonName.pepstats`
+Tsp=`awk '/T = Thr/ {sum+=$5} END {print sum}' pepstats_output_$TaxonName.pepstats` 
+Usp=`awk '/U = ---/ {sum+=$5} END {print sum}' pepstats_output_$TaxonName.pepstats`
+Vsp=`awk '/V = Val/ {sum+=$5} END {print sum}' pepstats_output_$TaxonName.pepstats`
+Wsp=`awk '/W = Trp/ {sum+=$5} END {print sum}' pepstats_output_$TaxonName.pepstats`
+Xsp=`awk '/X = Xaa/ {sum+=$5} END {print sum}' pepstats_output_$TaxonName.pepstats`
+Ysp=`awk '/Y = Tyr/ {sum+=$5} END {print sum}' pepstats_output_$TaxonName.pepstats`
+Zsp=`awk '/Z = Glx/ {sum+=$5} END {print sum}' pepstats_output_$TaxonName.pepstats`
+ 
+# all variables are stored in a text file that will have a single column with percentage. 
+echo -e "$Asp\n$Bsp\n$Csp\n$Dsp\n$Esp\n$Fsp\n$Gsp\n$Hsp\n$Isp\n$Jsp\n$Ksp\n$Lsp\n$Msp\n$Nsp\n$Osp\n$Psp\n$Qsp\n$Rsp\n$Ssp\n$Tsp\n$Usp\n$Vsp\n$Wsp\n$Xsp\n$Ysp\n$Zsp\n" >> file_percentage.txt
+
+
+
+# creates a file with amino acids, their single-letter abbreviations 
+for letter in {A..Z};
+do
+  echo $letter >> acid_names.txt
+done  
+
+
+#divides the percentage column in file_percentage( that is the sum of all percentages) file form the count number in file_count file and stores in a new file. 
+dc -f file_percentage.txt -f file_count.txt -e '3kzdsa2/sb[la:zla1-dsa0<m]smlmx[la1+ddsa;zrlb+;z/pclbla<n]snlnx' > average_percentage.txt 
+
+# creates a new file with three columns.
+# creates tabs in between those columns 
+paste acid_names.txt file_count.txt average_percentage.txt | awk {'print $1"\t"$2"\t"$3'} > merged_file.txt 
+
+
+# sorts the table in descending order according to the “count” column and creates a new file with three columns
+sort -k2 -n -r merged_file.txt > AAcid_table_of_$TaxonName.txt
+ 
+#inserts the names of columns, the final table generated
+sed  -i '1i Amino_acid\t Count\t Percentage\t' AAcid_table_of_$TaxonName.txt
+
+
+
+# counts the total number of sequences used to produce the output
+NUMBER_OF_SEQ=`awk '/A = Ala/ {count++} END {print count}' pepstats_output_$TaxonName.pepstats` 
+
+
+# counts the total number of amino acids used to generate the output
+sum1=0;
+ for x in `cat file_count.txt`; do
+         let sum1+=x;
+ done; 
+
+# provides the estimates obtained above to the user. 
+echo -e "The total number of sequences used: $NUMBER_OF_SEQ\nThe total number of amino acids used: $sum1."
+echo "The table of protein usage has been generated, it is named AAcid_table_of_$TaxonName.txt."
+
+
+# removes unnecessary files generated during this pipeline. 
+rm file_count.txt
+rm acid_names.txt
+rm average_percentage.txt
+rm merged_file.txt
+rm file_percentage.txt
+rm protein_$TaxonName.txt
+
+echo “The output files have been generated successfully! Finished.”
+
