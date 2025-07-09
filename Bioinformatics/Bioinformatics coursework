@@ -207,3 +207,4 @@ rm file_percentage.txt
 rm protein_$TaxonName.txt
 
 echo “The output files have been generated successfully! Finished.”
+
