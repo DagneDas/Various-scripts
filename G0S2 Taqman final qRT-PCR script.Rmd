@@ -1,0 +1,856 @@
+---
+title: "G0S2_taqman_analysis_notebook"
+output: html_notebook
+---
+
+
+Required libraries for the analysis:
+```{r}
+library(lme4)
+library(xlsx)
+library(ggplot2)
+library(dplyr)
+library(ggpubr)
+library(tidyverse)
+#library(hrbrthemes)
+library(viridis)
+library(tidyr)
+## library for the kurtosis thing
+library(e1071)
+library(tidyverse)
+## for linear mixed models
+#library('lme4')
+library(rstatix)
+library(gtools)
+library("ggrepel")
+```
+
+
+# Import datasets
+
+
+A file with the placenta cohort information is imported. File name is 'IGF2_H19 qRT-PCR results.xls'
+```{r}
+#Placenta_info <- read.xlsx(file=choose.files(), sheetName = "Sorted",header = TRUE, as.data.frame = TRUE, na.strings = "NA" )
+Placenta_info <- read.xlsx(file="C:/Users/dagne/OneDrive/Desktop/github_scripts/IGF2_H19 qRT-PCR results.xls", sheetName = "Sorted",header = TRUE, as.data.frame = TRUE, na.strings = "NA" )
+```
+
+
+# gene1 = G0S2
+
+# Import methylation data:
+
+Firstly, the methylation data is imported, the table will show which samples have normal, lower or higher methylation. This information will be used to colour dots or samples in violin plots of qRT-PCR data, giving the extra information to the expression data. 
+
+import file called 'G0S2_Dave.xlsx'
+```{r}
+#data_table_gene1 <- read.xlsx(file=choose.files(), sheetName = "All_joined_data",header = TRUE, as.data.frame = TRUE, na.strings = "NA" )
+data_table_gene1 <- read.xlsx(file="C:/Users/dagne/OneDrive/Desktop/github_scripts/G0S2_Dave.xlsx", sheetName = "All_joined_data",header = TRUE, as.data.frame = TRUE, na.strings = "NA" )
+```
+
+select required columns
+```{r}
+data_table2_gene1 <- data_table_gene1[,1:11]
+data_table_gene1 <- data_table2_gene1
+```
+
+
+Remove blood sample(s) & failed pyros
+```{r}
+data_table_gene1 <- data_table_gene1 %>% filter(!Sample_type %in% c('Blood'))
+data_table_gene1 <- data_table_gene1 %>% filter(!comment %in% c('Failed'))
+data_table_gene1
+```
+
+
+########################################### All CpG sites
+
+
+```{r}
+Gene1_filtered_table <- data_table_gene1
+rm(data_table_gene1)
+```
+
+
+```{r}
+summary(Gene1_filtered_table)
+```
+
+
+
+Convert CpG methylation % into numbers, otherwise gives an error later. 
+```{r}
+Gene1_filtered_table$CpG1 <- as.numeric(Gene1_filtered_table$CpG1)
+Gene1_filtered_table$CpG2 <- as.numeric(Gene1_filtered_table$CpG2)
+Gene1_filtered_table$CpG3 <- as.numeric(Gene1_filtered_table$CpG3)
+Gene1_filtered_table$CpG4 <- as.numeric(Gene1_filtered_table$CpG4)
+Gene1_filtered_table$CpG5 <- as.numeric(Gene1_filtered_table$CpG5)
+Gene1_filtered_table$CpG6 <- as.numeric(Gene1_filtered_table$CpG6)
+Gene1_filtered_table$CpG7 <- as.numeric(Gene1_filtered_table$CpG7)
+Gene1_filtered_table
+```
+
+Summary of methylation % across all 7 CpG sites 
+```{r}
+summary(Gene1_filtered_table)
+```
+
+
+########################################### Gene 1 - 4 CpGs
+
+Taking an average across the first 4 CpG sites (best data)
+Select required columns 
+
+```{r}
+Gene1_filtered_table$Mean_4_CpGs <- rowMeans(Gene1_filtered_table[,2:5], na.rm=TRUE)
+```
+
+```{r}
+summary(Gene1_filtered_table)
+```
+
+
+the median is the median (or centre point), also called second quartile, of the data (resulting from the fact  that the data is ordered).
+Q1 is the first quartile of the data, i.e., to say 25% of the data lies between minimum and Q1.
+Q3 is the third quartile of the data, i.e., to say 75% of the data lies between minimum and Q3.
+the difference between Q3 and Q1 is called the Inter-quartile range or IQR
+
+Lower bound: (Q1-1.5*IQR); Upper bound: (Q3+1.5*IQR)
+any data point less than the lower bound or more than the upper bound is considered as an outlier.
+
+Calculate upper and lower quartiles to know which samples are outliers 
+Q1
+```{r}
+lowerq = quantile(Gene1_filtered_table$Mean_4_CpGs)[2]
+lowerq
+```
+
+Q3
+```{r}
+upperq = quantile(Gene1_filtered_table$Mean_4_CpGs)[4]
+upperq
+```
+
+
+IQR
+```{r}
+iqr = upperq - lowerq #Or use IQR(data)
+iqr
+```
+
+```{r}
+result <- which(Gene1_filtered_table$Mean_4_CpGs > upperq | Gene1_filtered_table$Mean_4_CpGs < lowerq)
+result
+```
+
+
+Filter out outliers based on upper and lower quartiles. *Dave* asked to use the lowest and highest 10%.
+```{r}
+lower = quantile(Gene1_filtered_table$Mean_4_CpGs, probs=c(0.1))
+lower = 10
+upper = quantile(Gene1_filtered_table$Mean_4_CpGs, probs=c(0.9))
+upper = 90
+```
+
+Hypermethylated and hypomethylated samples
+```{r}
+gene1_hypomethylated_placenta <- dplyr::filter(Gene1_filtered_table, Mean_4_CpGs < lower)
+gene1_hypermethylated_placenta <- dplyr::filter(Gene1_filtered_table, Mean_4_CpGs > upper)
+gene1_hypermethylated_placenta
+gene1_hypomethylated_placenta
+# write.xlsx(x= gene1_hypomethylated_placenta, file= 'G0S2_hypomethylated_placenta.xlsx', col.names= T, row.names =FALSE, showNA =TRUE)
+# write.xlsx(x= gene1_hypermethylated_placenta, file= 'G0S2_hypermethylated_placenta.xlsx', col.names= T, row.names =FALSE, showNA =TRUE)
+```
+
+Total no. of samples with pyro data
+```{r}
+length(Gene1_filtered_table$Original_name)
+```
+```{r}
+#Samples with pyrosequencing data, which is good
+Gene1_filtered_table$Original_name
+```
+
+Creates a column in the table, which specifies if placental samples were hypomethylated, hypermethyated or showed normal methylation
+```{r}
+
+for (i in 1:70){
+  if (Gene1_filtered_table$Mean_4_CpGs[i] < as.numeric(lower)){
+    
+    Gene1_filtered_table$methyl_status[i] <- 'Hypo'
+    
+  } else if (Gene1_filtered_table$Mean_4_CpGs[i] > as.numeric(upper)) {
+    
+    Gene1_filtered_table$methyl_status[i] <- 'Hyper'
+    
+  } else {
+    
+    Gene1_filtered_table$methyl_status[i] <- 'Normal'
+  }
+}
+
+#write.xlsx(Gene1_filtered_table, file= 'G0S2_pyro_children_phenotypes_17_04.2023.xlsx')
+```
+
+```{r}
+summary(Gene1_filtered_table)
+```
+
+Now the methylation table is made, the taqman expression data can be imported:
+
+#################################################################################################
+
+# Import 384-well plate realtime qPCR results, file name called: 'G0S2-placenta cohort qPCR.xlsx' 
+
+#################################################################################################
+
+
+```{r}
+## import file 'G0S2_analysis_repeated_2024_03_22_good.xlsx'
+#expression_data <- read.xlsx(file=choose.files(), sheetName = 'Sorted_R',header = TRUE, as.data.frame = TRUE, na.strings = "NA" )
+expression_data <- read.xlsx(file="C:/Users/dagne/OneDrive/Desktop/github_scripts/G0S2_analysis_repeated_2024_03_22_good.xlsx", sheetName = 'Sorted_R',header = TRUE, as.data.frame = TRUE, na.strings = "NA" )
+```
+
+```{r}
+expression_data
+```
+
+
+Remove the endogenous control gene
+```{r}
+
+expression_data <- expression_data %>%  filter(!Omit %in% c("True"))
+expression_data1 <- unique(expression_data[,1:4])
+expression_data1 <- expression_data1 %>% filter(!Target_Name %in% c("RPL19"))
+
+```
+
+Merging qPCR table with the placenta cohort info table 
+```{r}
+expression_data2 <-  merge(expression_data1, Placenta_info, by.x='ID', by.y='ID', all.x = TRUE)
+```
+
+Rename the column
+```{r}
+names(expression_data2)[4] <- paste( "Fold_change")
+```
+
+
+```{r}
+expression_data2
+```
+Remove combined placenta cDNA control 
+```{r}
+expression_data_filtered <- expression_data2 %>% filter(!Sample_Name %in% c('Placenta cDNA'))
+rm(expression_data2)
+```
+
+```{r}
+expression_data_filtered$Target_Name <-  as.character(expression_data_filtered$Target_Name)
+```
+
+```{r}
+expression_table <- expression_data_filtered 
+expression_table 
+rm(expression_data_filtered)
+```
+
+
+########## Test expression data for normality 
+
+```{r}
+class(expression_table$Fold_change)
+which(is.na(expression_table$Fold_change))
+```
+```{r}
+expression_table$Fold_change <- as.numeric(expression_table$Fold_change)
+```
+
+
+```{r}
+summary(expression_table)
+```
+
+Explore data distribution
+```{r}
+hist(expression_table$Fold_change, breaks = 50)
+kurtosis(expression_table$Fold_change)
+ggqqplot(expression_table$Fold_change)
+```
+The data is slightly skewed
+
+
+```{r}
+## Test for normality, good for small sample sizes
+#shapiro.test(expression_table2$RQ_mean)
+## Test for normality, but only good for bigger samples, starting from 50 and up. 
+ks.test(expression_table$Fold_change, "pnorm", mean=mean(expression_table$Fold_change), sd=sd(expression_table$Fold_change))
+## Data in not normally distributed
+
+```
+
+Do log2 transformation to see if helps to normalise data
+```{r}
+expression_table$log2_Fold_change <- log2(expression_table$Fold_change)
+```
+
+
+Explore data distribution
+```{r}
+hist(expression_table$log2_Fold_change)
+kurtosis(expression_table$log2_Fold_change)
+ggqqplot(expression_table$log2_Fold_change)
+
+```
+
+
+
+```{r}
+## Test for normality, good for small sample sizes
+#shapiro.test(expression_table$log2_Fold_change)
+## Test for normality, but only good for bigger samples, starting from 50 and up. 
+ks.test(expression_table$log2_Fold_change, "pnorm", mean=mean(expression_table$log2_Fold_change), sd=sd(expression_table$log2_Fold_change))
+
+```
+log transformation normalised the data
+
+
+
+
+########## Individual groups
+
+Provides information about variables in the table
+```{r}
+str(expression_table)
+```
+
+Covert variables to factors
+```{r}
+expression_table$Children_phenotype <- factor(expression_table$Children_phenotype, levels=c('AGA', 'SGA', 'IUGR', 'PE'))
+expression_table$Sex <- factor(expression_table$Sex, levels=c('Male', 'Female'))
+expression_table$IVF <- factor(expression_table$IVF, levels=c('Yes', 'No'))
+expression_table$Gestational_age <- factor(expression_table$Gestational_age, levels=c('Term', 'PTLeve', 'PTMod', 'PTExt'))
+expression_table$Complications <- factor(expression_table$Complications, levels=c('1', '3', '4', '6', '7', '8', '9', '11', '15', '16', '99'))
+
+```
+
+Compare different variables
+```{r}
+plot(Fold_change ~ Children_phenotype, data= expression_table)
+plot(log2_Fold_change ~ Children_phenotype, data= expression_table)
+plot(Fold_change ~ Sex, data= expression_table)
+plot(log2_Fold_change ~ Sex, data= expression_table)
+plot(Fold_change ~ IVF, data= expression_table)
+plot(log2_Fold_change ~ IVF, data= expression_table)
+```
+
+```{r}
+G0S2 <- expression_table
+rm(expression_table)
+```
+
+Samples with expression data
+```{r}
+G0S2$Sample_Name
+```
+Total number of samples with expression data
+```{r}
+length(G0S2$Sample_Name)
+```
+
+
+######### Check residual distribution
+```{r}
+fit <- lm(log2_Fold_change ~ Children_phenotype, data = G0S2)
+summary(fit)
+ 
+residual_G0S2_table <- G0S2 %>% filter(!Children_phenotype %in% c(NA))
+residual_G0S2_table$predicted <- predict(fit)   # Save the predicted values
+residual_G0S2_table$residuals <- residuals(fit) # Save the residual values
+ 
+#Reorder the group order: in figures, cell order should change from the default 
+residual_G0S2_table$Children_phenotype <- factor(residual_G0S2_table$Children_phenotype, levels=c("AGA", "IUGR", "SGA", "PE"))
+ 
+```
+
+
+```{r}
+G0S2_residuals <- ggplot(residual_G0S2_table, aes(x = Children_phenotype, y = as.numeric(log2_Fold_change))) + 
+   geom_segment(aes(xend = Children_phenotype, yend = predicted), alpha = .2) +
+   geom_point(aes(colour = abs(residuals), size = abs(residuals))) +
+   scale_color_continuous(low = "black", high = "red") +
+   guides(alpha = 'none') + 
+   geom_point(aes(y = predicted), shape = 1)+  # Add the predicted values
+   theme_bw() +
+   guides(col=guide_legend("Residual size "),
+          size=guide_legend("Residual size"))+
+   xlab("\nChildren phenotypes") + 
+   ylab("(Log2 Fold change)\n")
+G0S2_residuals
+```
+
+
+
+```{r}
+required_column = G0S2$Fold_change
+```
+
+
+Calculate upper and lower quartiles to know which samples are outliers for expression
+```{r}
+lowerq = quantile(required_column)[2]
+lowerq
+upperq = quantile(required_column)[4]
+upperq
+iqr = upperq - lowerq #Or use IQR(data)
+iqr
+```
+
+
+Check outliers based on upper(75%) and lower(25%) quartiles 
+```{r}
+G0S2_outiers1 <- dplyr::filter(G0S2, Fold_change < lowerq)
+summary(G0S2_outiers1)
+G0S2_outiers1 
+
+G0S2_outiers2 <- dplyr::filter(G0S2, Fold_change > upperq)
+summary(G0S2_outiers2)
+G0S2_outiers2
+```
+
+
+Distributions
+```{r}
+hist(G0S2$Fold_change)
+ggqqplot(G0S2$Fold_change)
+hist(G0S2$log2_Fold_change)
+ggqqplot(G0S2$log2_Fold_change)
+nrow(G0S2)
+
+```
+log transformation normalises the data
+
+###############################################################################################
+
+# merge qPCR data with methylation data 
+                                      
+###############################################################################################
+
+
+```{r}
+Gene1_filtered_table$ID <- as.character(Gene1_filtered_table$ID)
+```
+
+```{r}
+G0S2$Sample_Name <- as.character(G0S2$Sample_Name)
+```
+
+```{r}
+G0S2$Birth_type <- factor(G0S2$Birth_type, levels=c('1', '2', '3', '4', '5', '6'))
+```
+
+```{r}
+G0S2_combined_table <- full_join(G0S2, Gene1_filtered_table, by=c("ID" = "ID"))
+```
+
+
+```{r}
+G0S2_combined_table
+```
+
+Covert variables to factors or characters to numbers
+this function converts data to factors or numbers
+```{r}
+conert_data_types <- function(data_table_input){
+  
+  data_table_input$Children_phenotype <- factor(data_table_input$Children_phenotype, levels=c('AGA', 'SGA', 'IUGR', 'PE'))
+  data_table_input$Sex<- factor(data_table_input$Sex, levels=c('Male', 'Female'))
+  data_table_input$IVF <- factor(data_table_input$IVF, levels=c('Yes', 'No'))
+  data_table_input$Gestational_age <- factor(data_table_input$Gestational_age, levels=c('Term', 'PTLeve', 'PTMod', 'PTExt'))
+  data_table_input$Complications <- factor(data_table_input$Complications, levels=c('1', '3', '4', '6', '7', '8', '9', '11', '15', '16', '99'))
+  data_table_input$Fold_change <- as.numeric(data_table_input$Fold_change)
+  #data_table_input$RQ <- as.numeric(data_table_input$RQ)
+  data_table_input$log2_Fold_change <- as.numeric(data_table_input$log2_Fold_change)
+  
+  ## this command in necessary, as otherwise returns a vector with the last value. 
+  return(data_table_input)
+} 
+
+```
+
+
+Returns tables with changed data types in several columns 
+```{r}
+G0S2_combined_table <- conert_data_types(data_table_input= G0S2_combined_table)
+G0S2_combined_table
+```
+change one column name 
+```{r}
+names(G0S2_combined_table)[36] <- paste("CpG_average")
+```
+
+
+Test individual groups if data is normally distributed
+
+Test for normality, but only good for bigger samples, starting from 50 and up. 
+```{r}
+input_table= G0S2_combined_table #log2 transformation helps
+
+ks.test(input_table$Fold_change, "pnorm", mean=mean(input_table$Fold_change), sd=sd(input_table$Fold_change))
+ks.test(input_table$log2_Fold_change, "pnorm", mean=mean(input_table$log2_Fold_change), sd=sd(input_table$log2_Fold_change))
+
+
+```
+
+The placenta samples that have good qRT-PCR values
+```{r}
+G0S2_combined_table$Sample_Name
+```
+
+The placenta samples that have good qRT-PCR and pyrosequencing values
+```{r}
+df <- G0S2_combined_table %>% filter(!methyl_status %in% c(NA))
+df$Sample_Name
+```
+
+For individual group comparisons can use parametric t. test if use log2 transformed data, or wilcox to keep the same statistical test for both genes. 
+```{r}
+## Merge all tables to get one table with all genes in it 
+merged_table3 <- G0S2_combined_table
+
+which(is.na(merged_table3$methyl_status))
+length(which(is.na(merged_table3$methyl_status)))
+
+```
+Samples that don't have pyro data, to keep them in expression plots
+```{r}
+## fills empty rows, required for graphs, requires numbers not characters
+for (i in c(4, 8, 11, 27, 29, 30, 35, 38, 51, 52, 61, 62, 74)){
+  merged_table3$methyl_status[i] <- 'Unknown'
+}
+```
+
+
+
+```{r}
+which(is.na(merged_table3$methyl_status))
+```
+
+```{r}
+coordinates<- which(is.na(merged_table3$Children_phenotype))
+merged_table3$Children_phenotype <- as.character(merged_table3$Children_phenotype)
+
+```
+
+```{r}
+
+merged_table3$Children_phenotype <- factor(merged_table3$Children_phenotype, levels=c('AGA', 'SGA', 'IUGR', 'PE'))
+
+```
+
+test if data in normally distributed across different groups
+```{r}
+table_input= merged_table3
+gene_selected = 'G0S2'
+
+```
+
+
+```{r}
+c1 <-table_input %>% filter(Target_Name %in% c(gene_selected) & Children_phenotype %in% c('AGA')) 
+shapiro.test(c1$log2_Fold_change) # ok 
+c1 <-table_input %>% filter(Target_Name %in% c(gene_selected) & Children_phenotype %in% c('SGA')) 
+shapiro.test(c1$log2_Fold_change) # ok
+c1 <-table_input%>%  filter(Target_Name %in% c(gene_selected) & Children_phenotype %in% c('IUGR')) 
+shapiro.test(c1$log2_Fold_change) # ok
+c1 <-table_input %>%  filter(Target_Name %in% c(gene_selected) & Children_phenotype %in% c('PE')) 
+shapiro.test(c1$log2_Fold_change) # ok 
+
+```
+
+
+```{r}
+which(is.na(table_input$Children_phenotype))
+```
+
+```{r}
+b1 <- 
+  ggplot( merged_table3, aes(x=Children_phenotype, y=log2_Fold_change, color=Target_Name)) +
+  geom_boxplot(outlier.shape=NA, position = position_dodge(0.8))+
+  geom_point(position=position_jitterdodge())+
+  geom_label_repel(
+    min.segment.length = 0,
+    mapping = aes(label = Sample_Name),
+    position = position_dodge(0.7)
+  )
+b1
+```
+
+
+#################################################################################################################
+#                                                   ~  Plot for the paper ~
+#################################################################################################################
+
+
+
+########## Change fonts for the plots
+
+```{r}
+library(extrafont)
+font_import()
+loadfonts(device = "win")
+```
+
+
+
+
+Initiate a ggplot, modify here
+```{r}
+gene1 <- merged_table3 %>% 
+  filter(Target_Name %in% c('G0S2')) %>%
+  ggplot(aes(x=Children_phenotype, y=log2_Fold_change))
+
+```
+
+select the type of comparison for a test
+```{r}
+#my_comparisons1 <- list(c('Male', 'Female'))
+my_comparisons2 <- list(c('AGA', 'SGA'), c('AGA', 'IUGR'), c('AGA', 'PE'))
+#my_comparisons3 <- list(c('AGA', 'IUGR'), c('AGA', 'PE'))
+
+```
+
+
+
+```{r}
+## sets a theme
+theme_set(
+  theme_classic() +
+    theme(legend.position = "right")
+)
+
+V4 <- gene1 +
+  ## Adds a boxplot
+  ## Adds a boxplot
+  geom_violin( trim = FALSE, fill = "gray95", alpha=1, size=0.5,  width=1.3, position= position_dodge(0.8), cex=0.75 )+
+  geom_boxplot(width = 0.3,fill = "gray75",  cex=0.75, alpha=1, lwd=0.5, outlier.shape = NA) +
+  scale_y_continuous(limits=c(-7.3, 13))+
+  xlab("") + 
+  ylab("log2(Fold change)\n")+
+  #ggtitle("\n\n") +
+  ## adjust points, can remove a legend 
+  geom_point(position=position_jitterdodge(jitter.width=0.7, dodge.width = 0), size=1.5, pch=21, aes(fill=factor(methyl_status)))+
+  scale_fill_manual(name = "Methylation status\n\n G0S2", labels = c('Hypomethylated', 'Normal methylation', 'Unknown'),values = c("red", "#00be14ff", "white"))+
+  stat_summary(fun.y="mean", color="black", shape=18, size=0.5)+
+  stat_compare_means(comparisons = my_comparisons2, method = "wilcox", label.y = c(7, 8.5, 10), label = "p.signif", tip.length = 0.03, bracket.size = 0.5, size=4,
+  symnum.args <- list(cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 1), symbols = c("****", "***", "**", "*", "ns"), size=2)) 
+
+V4_FINAL <- V4+
+### sets a theme
+theme_set(
+  theme_classic() +
+    theme(legend.position = "right", plot.margin = unit(c(0.1, 0.1, 0.1, 0.1), "inches")))+
+      theme(plot.title = element_text(colour='Black', size=12, family='Arial',hjust = 0.5),
+        axis.title.x = element_text(color='Black', size=12, family='Arial'),
+        axis.title.y = element_text(color='Black', size=12, family='Arial'),
+        axis.text.x = element_text(color='black', size=12, family='Arial'),
+        axis.text.y = element_text(color='black', size=12, family='Arial'))
+
+
+V4_FINAL 
+
+```
+
+Removes the legend
+```{r}
+
+V4_FINAL2 <- V4_FINAL + theme(legend.position="none")
+
+
+V4_FINAL2 
+```
+
+Makes the same size as for the other plots
+```{r}
+figure4_with_legend <- ggarrange(V4_FINAL,
+                     labels = c("E"),
+                     ncol = 2, nrow = 2)+ ggtitle("")
+figure4_with_legend
+
+```
+
+
+Without the legend
+```{r}
+figure4 <- ggarrange(V4_FINAL2,
+                     labels = c("E"),
+                     ncol = 2, nrow = 2)+ ggtitle("")
+figure4
+
+```
+
+
+
+################################################################################################################
+
+###################################### correlation analysis methylation vs expression ####################
+
+
+
+```{r}
+### removes samples from these columns that have NAs
+correlation_table <- merged_table3 %>% drop_na(log2_Fold_change, CpG_average)
+
+## splitting in individua groups
+AGA <-merged_table3 %>% filter(Children_phenotype %in% c('AGA')) 
+AGA <- AGA %>% drop_na(log2_Fold_change, CpG_average)
+
+SGA <-merged_table3 %>% filter(Children_phenotype %in% c('SGA')) 
+SGA <- SGA %>% drop_na(log2_Fold_change, CpG_average)
+
+PE <-merged_table3 %>% filter(Children_phenotype %in% c('PE'))
+PE <- PE %>% drop_na(log2_Fold_change, CpG_average)
+
+IUGR <-merged_table3 %>% filter(Children_phenotype %in% c('IUGR'))
+IUGR <- IUGR %>% drop_na(log2_Fold_change, CpG_average)
+
+```
+
+
+```{r}
+shapiro.test(AGA$log2_Fold_change)
+shapiro.test(AGA$CpG_average) 
+#
+shapiro.test(SGA$log2_Fold_change)
+shapiro.test(SGA$CpG_average)
+#
+shapiro.test(PE$log2_Fold_change) 
+shapiro.test(PE$CpG_average) 
+#
+shapiro.test(IUGR$log2_Fold_change)  
+shapiro.test(IUGR$CpG_average)
+
+
+```
+
+
+```{r}
+## correlation test
+cor(correlation_table$log2_Fold_change, correlation_table$CpG_average, method = 'spearman')
+
+```
+
+
+```{r}
+## correlation test
+cor(AGA$log2_Fold_change, AGA$CpG_average, method = 'spearman')
+cor(AGA$log2_Fold_change, AGA$CpG_average, method = 'kendall')
+cor(SGA$log2_Fold_change, SGA$CpG_average, method = 'spearman')
+cor(SGA$log2_Fold_change, SGA$CpG_average, method = 'spearman')
+cor(PE$log2_Fold_change, PE$CpG_average, method = 'spearman')
+cor(PE$log2_Fold_change, PE$CpG_average, method = 'spearman')
+cor(IUGR$log2_Fold_change, IUGR$CpG_average, method = 'spearman')
+
+```
+
+Reorder table
+```{r}
+correlation_table <- correlation_table[order(correlation_table$CpG_average),]
+
+```
+
+Making sample names as factors
+```{r}
+correlation_table$Sample_Name <- as.factor(correlation_table$Sample_Name)
+
+```
+
+Reorder factors or samples based on the methylation level, mean.
+#https://www.r-graph-gallery.com/267-reorder-a-variable-in-ggplot2.html
+```{r}
+
+correlation_table$Sample_Name = with(correlation_table, reorder(Sample_Name,correlation_table$CpG_average))
+
+
+```
+
+############################### Scatter plot
+
+one regression line for all phenotypes
+```{r}
+theme_set(
+  theme_classic() +
+    theme(legend.position = "right")
+)
+
+gene <- 
+  ggplot(correlation_table, aes(x=log2_Fold_change, y=CpG_average))
+
+groups <- 
+  gene +
+  geom_point( size=3)+
+  geom_smooth(method="lm", se = FALSE)+
+#  geom_line(data=correlation_table, aes(x=log2_Fold_change, y=  CpG_average, color= Children_phenotype))+ xlab("\n log2(Fold change)") + 
+  ylim(0, 100)+
+  scale_fill_brewer(palette="Dark2")+
+  ylab("Methylation level (%)\n")+
+  xlab('\nLog2(Fold change)')+
+  ggtitle("\n\n") +
+  ## Adjustdjust title, x and y labels, and x and y axis text
+  theme(plot.title = element_text(colour='Black', size=16, face='bold', family='Courier', 
+                                  hjust = 0.5),
+        axis.title.x = element_text(color='Black', size=13, face="bold", family='Courier'),
+        axis.title.y = element_text(color='Black', size=13, face="bold", family='Courier'),
+        axis.text.x = element_text(face='bold', color='black', size=11, angle = 90),
+        axis.text.y = element_text(face='bold', color='black', size=11))
+groups
+
+
+```
+
+
+
+Several regression lines for each phenotype
+```{r}
+## sets a theme
+theme_set(
+  theme_classic() +
+    theme(legend.position = "right")
+)
+
+gene <- 
+  ggplot(correlation_table, aes(x=log2_Fold_change, y=CpG_average, color= factor(Children_phenotype)))
+
+groups <- 
+  gene +
+  geom_point( size=3)+
+  geom_smooth(method="lm", se = FALSE)+
+  #geom_line(data=correlation_table, aes(x=log2_Fold_change, y=  CpG_average, color= Children_phenotype))+ xlab("\n log2(Fold change)") + 
+  ylim(0, 100)+
+  scale_fill_brewer(palette="Dark2")+
+  ylab("Methylation level (%)\n")+
+  xlab('\nLog2(Fold change)')+
+  ggtitle("\n\n") +
+  ## Adjustdjust title, x and y labels, and x and y axis text
+  theme(plot.title = element_text(colour='Black', size=16, face='bold', family='Courier', 
+                                  hjust = 0.5),
+        axis.title.x = element_text(color='Black', size=13, face="bold", family='Courier'),
+        axis.title.y = element_text(color='Black', size=13, face="bold", family='Courier'),
+        axis.text.x = element_text(face='bold', color='black', size=11, angle = 90),
+        axis.text.y = element_text(face='bold', color='black', size=11))
+groups
+
+
+```
+
+Check if other non-linear models fit the data better. 
+```{r}
+gene <- 
+  ggplot(correlation_table, aes(x=log2_Fold_change, y=CpG_average, color=factor(Children_phenotype)))+
+  geom_point( size=3)+
+  ylim(0, 100)+
+  geom_smooth(method="loess", se = FALSE)
+  
+gene
+```
+
