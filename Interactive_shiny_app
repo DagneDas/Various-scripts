@@ -24,6 +24,7 @@ library(scatterplot3d)
 setwd("D:/NRP DTP (PhD)/Data/Functional Genomic Technologies/Assigments/FGT_my_shiny")
 
 #load the data. 
+# can't upload to git. Too big file.
 load("D:/NRP DTP (PhD)/Data/Functional Genomic Technologies/Assigments/FGT_my_shiny/FGT_assignm.Rdata")
 
 
